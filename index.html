@@ -385,7 +385,7 @@ const T = {
   EN: {
     salesDocs:'Sales documents', einvoicing:'E-invoicing', ereporting:'E-reporting',
     total:'Total', needsAction:'Needs action', pending:'Pending', failed:'Failed',
-    submitted:'Submitted', disputed:'Disputed', refused:'Refused', rejected:'Rejected',
+    sent:'Sent', submitted:'Submitted', disputed:'Disputed', refused:'Refused', rejected:'Rejected',
     filter:'Filter', search:'Search by invoice #, buyer name, VAT...',
     docDateRange:'Document date range', selectedRows:'Selected rows',
     export:'Export', submit:'Submit', print:'Print', email:'Email',
@@ -421,7 +421,7 @@ const T = {
   FR: {
     salesDocs:'Documents de vente', einvoicing:'E-facturation', ereporting:'E-reporting',
     total:'Total', needsAction:'Action requise', pending:'En attente', failed:'Echoue',
-    submitted:'Soumis', disputed:'En litige', refused:'Refuse', rejected:'Rejete',
+    sent:'Envoye', submitted:'Soumis', disputed:'En litige', refused:'Refuse', rejected:'Rejete',
     filter:'Filtrer', search:'Rechercher par numero, nom, TVA...',
     docDateRange:'Periode de date du document', selectedRows:'Lignes selectionnees',
     export:'Exporter', submit:'Soumettre', print:'Imprimer', email:'E-mail',
@@ -512,7 +512,7 @@ const SELLER_ACTIONS = {
   PARTIAL:[{id:'confirmPayment',label:'Confirm Payment'},{id:'complete',label:'Provide Additional Info'}],
   DISPUTED:[{id:'cancelReplace',label:'Resolve Dispute'}],
   SUSPENDED:[],
-  REFUSED:[{id:'createCorrective',label:'Create Corrective Invoice'},{id:'createCreditNote',label:'Create Credit Note + New Invoice'}],
+  REFUSED:[],
   PAYMENT_SENT:[{id:'confirmPayment',label:'Confirm Payment'}],
   COLLECTED:[],
   REJECTED:[],
@@ -784,9 +784,10 @@ function renderSalesDashboard(){
   const counts = {};
   Object.keys(STATUS).forEach(k=>counts[k]=0);
   invoices.forEach(inv=>counts[inv.status]=(counts[inv.status]||0)+1);
-  const needsActionStatuses = ['PENDING','FAILED','APPROVED','PARTIAL','DISPUTED','SUSPENDED','REFUSED','REJECTED','PAYMENT_SENT'];
+  const needsActionStatuses = ['PENDING','FAILED','APPROVED','PARTIAL','DISPUTED','SUSPENDED','PAYMENT_SENT'];
+  const sentStatuses = ['SUBMITTED','AVAILABLE'];
   const urgencyOrder = {FAILED:0,DISPUTED:1,REFUSED:2,REJECTED:3,SUSPENDED:4,PENDING:5,APPROVED:6,PARTIAL:7,PAYMENT_SENT:8,ACKNOWLEDGED:9,SUBMITTED:10,AVAILABLE:11,COLLECTED:12,CANCELLED:13};
-  let rawFiltered = activeFilter==='NEEDS_ACTION' ? invoices.filter(i=>needsActionStatuses.includes(i.status)) : activeFilter ? invoices.filter(i=>i.status===activeFilter) : invoices;
+  let rawFiltered = activeFilter==='NEEDS_ACTION' ? invoices.filter(i=>needsActionStatuses.includes(i.status)) : activeFilter==='SENT' ? invoices.filter(i=>sentStatuses.includes(i.status)) : activeFilter ? invoices.filter(i=>i.status===activeFilter) : invoices;
   if(searchQuery){
     const q=searchQuery.toLowerCase();
     rawFiltered=rawFiltered.filter(i=>i.id.toLowerCase().includes(q)||i.buyerName.toLowerCase().includes(q)||i.buyerVat.toLowerCase().includes(q)||(i.ppfId||'').toLowerCase().includes(q));
@@ -814,11 +815,11 @@ function renderSalesDashboard(){
     <div class="tabs"><div class="tab active">${t('einvoicing')}</div><div class="tab">${t('ereporting')}</div></div>
     <div class="cards">
       <div class="card ${!activeFilter?'active':''}" onclick="setFilter(null)"><div class="card-label">${t('total')}</div><div class="card-count">${invoices.length}</div></div>
-      <div class="card ${activeFilter==='NEEDS_ACTION'?'active':''}" onclick="setFilter('NEEDS_ACTION')" style="border-right-color:#D97706;"><div class="card-label"><span class="dot" style="background:#D97706;"></span> ${t('needsAction')}</div><div class="card-count" style="color:#D97706;">${invoices.filter(i=>['PENDING','FAILED','APPROVED','PARTIAL','DISPUTED','SUSPENDED','REFUSED','REJECTED','PAYMENT_SENT'].includes(i.status)).length}</div></div>
+      <div class="card ${activeFilter==='NEEDS_ACTION'?'active':''}" onclick="setFilter('NEEDS_ACTION')" style="border-right-color:#D97706;"><div class="card-label"><span class="dot" style="background:#D97706;"></span> ${t('needsAction')}</div><div class="card-count" style="color:#D97706;">${invoices.filter(i=>['PENDING','FAILED','APPROVED','PARTIAL','DISPUTED','SUSPENDED','PAYMENT_SENT'].includes(i.status)).length}</div></div>
       <div class="card ${activeFilter==='PENDING'?'active':''}" onclick="setFilter('PENDING')"><div class="card-label"><span class="dot" style="background:var(--gray);"></span> ${t('pending')}</div><div class="card-count">${counts.PENDING||0}</div></div>
       <div class="card ${activeFilter==='FAILED'?'active':''}" onclick="setFilter('FAILED')"><div class="card-label"><span class="dot" style="background:var(--red);"></span> ${t('failed')}</div><div class="card-count">${counts.FAILED||0}</div></div>
-      <div class="card ${activeFilter==='AVAILABLE'?'active':''}" onclick="setFilter('AVAILABLE')"><div class="card-label"><span class="dot" style="background:var(--cyan);"></span> Sent</div><div class="card-count">${(counts.SUBMITTED||0)+(counts.AVAILABLE||0)}</div></div>
-      <div class="card ${activeFilter==='DISPUTED'?'active':''}" onclick="setFilter('DISPUTED')"><div class="card-label"><span class="dot" style="background:var(--gray);"></span> ${t('disputed')}</div><div class="card-count">${counts.DISPUTED||0}</div></div>
+      <div class="card ${activeFilter==='SENT'?'active':''}" onclick="setFilter('SENT')"><div class="card-label"><span class="dot" style="background:var(--blue);"></span> ${t('sent')}</div><div class="card-count">${(counts.SUBMITTED||0)+(counts.AVAILABLE||0)}</div></div>
+      <div class="card ${activeFilter==='DISPUTED'?'active':''}" onclick="setFilter('DISPUTED')"><div class="card-label"><span class="dot" style="background:var(--yellow);"></span> ${t('disputed')}</div><div class="card-count">${counts.DISPUTED||0}</div></div>
       <div class="card ${activeFilter==='REFUSED'?'active':''}" onclick="setFilter('REFUSED')"><div class="card-label"><span class="dot" style="background:#C62828;"></span> ${t('refused')}</div><div class="card-count">${counts.REFUSED||0}</div></div>
       <div class="card ${activeFilter==='REJECTED'?'active':''}" onclick="setFilter('REJECTED')"><div class="card-label"><span class="dot" style="background:var(--red);"></span> ${t('rejected')}</div><div class="card-count">${counts.REJECTED||0}</div></div>
     </div>
@@ -830,6 +831,7 @@ function renderSalesDashboard(){
       </div>
       <div class="tl-right">
         <span class="sel-count">${t('selectedRows')}: ${selCount}</span>
+        <div class="act-wrap"><button class="btn" onclick="event.stopPropagation();toggleActionMenu('seller-bulk-menu')">☰ Bulk Actions ▾</button><div class="act-menu" id="seller-bulk-menu" style="right:0;top:36px;">${selCount===0?'<div class="act-item" style="color:var(--muted);cursor:default;">Select invoices to perform bulk actions</div>':renderSellerBulkItems()}</div></div>
         <div class="act-wrap"><button class="btn" onclick="event.stopPropagation();toggleActionMenu('export-menu')"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" style="vertical-align:middle;"><path d="M2 9v3h10V9"/><path d="M7 2v7M4 7l3 3 3-3"/></svg> ${t('export')} ▾</button><div class="act-menu" id="export-menu" style="right:0;top:36px;"><div class="act-item" onclick="event.stopPropagation();showToast('Printing...','info');toggleActionMenu('export-menu')">⎙ ${t('print')}</div><div class="act-item" onclick="event.stopPropagation();showToast('Email...','info');toggleActionMenu('export-menu')">✉ ${t('email')}</div><div class="act-item" onclick="event.stopPropagation();showToast('Downloading XML...','info');toggleActionMenu('export-menu')">↓ ${t('xmlDownload')}</div><div class="act-item" onclick="event.stopPropagation();showToast('Downloading report...','info');toggleActionMenu('export-menu')">↓ ${t('downloadReport')}</div></div></div>
         <button class="btn btn-primary" ${allFiltered.filter(i=>i.selected&&['PENDING','FAILED'].includes(i.status)).length===0?'disabled':''} onclick="generateInvoices()">${t('submit')}</button>
       </div>
@@ -918,8 +920,9 @@ function toggleSort(col){
 }
 
 function selectAll(checked){
-  const needsActionStatuses = ['PENDING','FAILED','APPROVED','PARTIAL','DISPUTED','SUSPENDED','REFUSED','REJECTED','PAYMENT_SENT'];
-  let target = activeFilter==='NEEDS_ACTION' ? invoices.filter(i=>needsActionStatuses.includes(i.status)) : activeFilter ? invoices.filter(i=>i.status===activeFilter) : invoices;
+  const needsActionStatuses = ['PENDING','FAILED','APPROVED','PARTIAL','DISPUTED','SUSPENDED','PAYMENT_SENT'];
+  const sentStatuses = ['SUBMITTED','AVAILABLE'];
+  let target = activeFilter==='NEEDS_ACTION' ? invoices.filter(i=>needsActionStatuses.includes(i.status)) : activeFilter==='SENT' ? invoices.filter(i=>sentStatuses.includes(i.status)) : activeFilter ? invoices.filter(i=>i.status===activeFilter) : invoices;
   if(searchQuery){ const q=searchQuery.toLowerCase(); target=target.filter(i=>i.id.toLowerCase().includes(q)||i.buyerName.toLowerCase().includes(q)||i.buyerVat.toLowerCase().includes(q)); }
   target.forEach(i=>i.selected=checked);
   renderSalesDashboard();
@@ -1092,6 +1095,100 @@ function validateInvoice(id){
   setTimeout(()=>openDetail(id),300);
 }
 
+// ═══════════════════════════════════════
+// BULK ACTIONS — SELLER
+// ═══════════════════════════════════════
+// Seller bulk-eligible actions:
+// - Submit: Pending, Failed (handled by existing generateInvoices, toolbar button)
+// - Complete: Partially Approved (206) — one-click, signals seller provided info out-of-band
+
+const SELLER_BULK_RULES = {
+  complete: { eligible: ['PARTIAL'], label: 'Complete', newStatus: 'COMPLETED', timelineEvent: 'Seller marked complete (209)', timelineStatus: 'COMPLETED', toastAction: 'Complete' }
+};
+
+function renderSellerBulkItems(){
+  const sel = invoices.filter(i=>i.selected);
+  if(!sel.length) return '<div class="act-item" style="color:var(--muted);cursor:default;">Select invoices to perform bulk actions</div>';
+  let html = '';
+  let hasAny = false;
+  Object.keys(SELLER_BULK_RULES).forEach(key=>{
+    const rule = SELLER_BULK_RULES[key];
+    const count = sel.filter(i=>rule.eligible.includes(i.status)).length;
+    if(count > 0){
+      html += '<div class="act-item" onclick="event.stopPropagation();executeBulkSeller(\''+key+'\');toggleActionMenu(\'seller-bulk-menu\')">' + rule.label + ' (' + count + ')</div>';
+      hasAny = true;
+    }
+  });
+  if(!hasAny) html = '<div class="act-item" style="color:var(--muted);cursor:default;">No bulk actions available for selected invoices</div>';
+  return html;
+}
+
+function executeBulkSeller(actionKey){
+  const rule = SELLER_BULK_RULES[actionKey];
+  const sel = invoices.filter(i=>i.selected);
+  const eligible = sel.filter(i=>rule.eligible.includes(i.status));
+  const skipped = sel.length - eligible.length;
+  if(!eligible.length){ showToast('None of the selected invoices can be processed for this action.','error'); return; }
+  eligible.forEach(inv=>{
+    inv.status = rule.newStatus;
+    inv.timeline.push({event:rule.timelineEvent, status:rule.timelineStatus, actor:'acmexyz@abcmail.in', time:'Now', cdar:'CDV-'+Math.random().toString(36).substr(2,8).toUpperCase(), dest:'PA-R', delivery:'Sent'});
+    inv.selected = false;
+  });
+  const msg = rule.toastAction + ': ' + eligible.length + ' invoice(s) updated.' + (skipped>0 ? ' ' + skipped + ' skipped (not in eligible status).' : '');
+  showToast(msg, 'success');
+  renderSalesDashboard();
+}
+
+// ═══════════════════════════════════════
+// BULK ACTIONS — BUYER
+// ═══════════════════════════════════════
+// Buyer bulk-eligible actions (one-click only, no modals):
+// - Acknowledge: Available (203)
+// - Approve: Available (203), Acknowledged (204), Completed (209/COMPLETED), Disputed (207), Suspended (208)
+// - Send Payment: Acknowledged (204), Approved (205)
+
+const BUYER_BULK_RULES = {
+  acknowledge: { eligible: ['AVAILABLE'], label: 'Acknowledge', newStatus: 'ACKNOWLEDGED', timelineEvent: 'Buyer acknowledged (204)', timelineStatus: 'ACKNOWLEDGED', dest: 'PA-E', toastAction: 'Acknowledge' },
+  approve: { eligible: ['AVAILABLE','ACKNOWLEDGED','COMPLETED','DISPUTED','SUSPENDED'], label: 'Approve', newStatus: 'APPROVED', timelineEvent: 'Buyer approved (205)', timelineStatus: 'APPROVED', dest: 'PA-E', toastAction: 'Approve' },
+  sendPayment: { eligible: ['ACKNOWLEDGED','APPROVED'], label: 'Send Payment', newStatus: 'PAYMENT_SENT', timelineEvent: 'Buyer sent payment (211)', timelineStatus: 'PAYMENT_SENT', dest: 'PA-E', toastAction: 'Send Payment' }
+};
+
+function renderBuyerBulkItems(){
+  const sel = getPurchaseInvoices().filter(i=>i.selected);
+  if(!sel.length) return '<div class="act-item" style="color:var(--muted);cursor:default;">Select invoices to perform bulk actions</div>';
+  let html = '';
+  let hasAny = false;
+  Object.keys(BUYER_BULK_RULES).forEach(key=>{
+    const rule = BUYER_BULK_RULES[key];
+    const count = sel.filter(i=>rule.eligible.includes(i.status)).length;
+    if(count > 0){
+      html += '<div class="act-item" onclick="event.stopPropagation();executeBulkBuyer(\''+key+'\');toggleActionMenu(\'buyer-bulk-menu\')">' + rule.label + ' (' + count + ')</div>';
+      hasAny = true;
+    }
+  });
+  if(!hasAny) html = '<div class="act-item" style="color:var(--muted);cursor:default;">No bulk actions available for selected invoices</div>';
+  return html;
+}
+
+function executeBulkBuyer(actionKey){
+  const rule = BUYER_BULK_RULES[actionKey];
+  const sel = getPurchaseInvoices().filter(i=>i.selected);
+  const eligible = sel.filter(i=>rule.eligible.includes(i.status));
+  const skipped = sel.length - eligible.length;
+  if(!eligible.length){ showToast('None of the selected invoices can be processed for this action.','error'); return; }
+  eligible.forEach(inv=>{
+    inv.status = rule.newStatus;
+    inv.timeline.push({event:rule.timelineEvent, status:rule.timelineStatus, actor:'you@software-inc.fr', time:'Now', cdar:'CDV-'+Math.random().toString(36).substr(2,8).toUpperCase(), dest:rule.dest, delivery:'Sent'});
+    inv.selected = false;
+  });
+  const msg = rule.toastAction + ': ' + eligible.length + ' invoice(s) updated.' + (skipped>0 ? ' ' + skipped + ' skipped (not in eligible status).' : '');
+  showToast(msg, 'success');
+  renderPurchaseDashboard();
+}
+
+// ═══════════════════════════════════════
+// SELLER SUBMIT (existing)
+// ═══════════════════════════════════════
 function generateInvoices(){
   const selected=invoices.filter(i=>i.selected);
   const eligible=selected.filter(i=>['PENDING','FAILED'].includes(i.status));
@@ -1445,7 +1542,8 @@ function renderPurchaseDashboard(){
       </div>
       <div class="tl-right">
         <span class="sel-count">${t('selectedRows')}: ${selCount}</span>
-        <button class="btn btn-primary" ${selCount===0?'disabled':''} onclick="openBulkAction()">${t('updateStatus')}</button>
+        <div class="act-wrap"><button class="btn" onclick="event.stopPropagation();toggleActionMenu('buyer-bulk-menu')">☰ Bulk Actions ▾</button><div class="act-menu" id="buyer-bulk-menu" style="right:0;top:36px;">${selCount===0?'<div class="act-item" style="color:var(--muted);cursor:default;">Select invoices to perform bulk actions</div>':renderBuyerBulkItems()}</div></div>
+        <div class="act-wrap"><button class="btn" onclick="event.stopPropagation();toggleActionMenu('buyer-export-menu')"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" style="vertical-align:middle;"><path d="M2 9v3h10V9"/><path d="M7 2v7M4 7l3 3 3-3"/></svg> ${t('export')} ▾</button><div class="act-menu" id="buyer-export-menu" style="right:0;top:36px;"><div class="act-item" onclick="event.stopPropagation();showToast('Printing...','info');toggleActionMenu('buyer-export-menu')">⎙ ${t('print')}</div><div class="act-item" onclick="event.stopPropagation();showToast('Email...','info');toggleActionMenu('buyer-export-menu')">✉ ${t('email')}</div><div class="act-item" onclick="event.stopPropagation();showToast('Downloading XML...','info');toggleActionMenu('buyer-export-menu')">↓ ${t('xmlDownload')}</div><div class="act-item" onclick="event.stopPropagation();showToast('Downloading report...','info');toggleActionMenu('buyer-export-menu')">↓ ${t('downloadReport')}</div></div></div>
       </div>
     </div>
     <div class="tbl-wrap"><table>
@@ -1766,36 +1864,7 @@ function buyerPartialApprove(id){
   renderPurchaseDashboard();
 }
 
-function openBulkAction(){
-  const sel=getPurchaseInvoices().filter(i=>i.selected);
-  if(!sel.length){showToast('Select invoices first.','error');return;}
-  // Find common available actions
-  const commonActions=['acknowledge','approve','dispute','suspend','refuse','sendPayment'];
-  const mc=document.getElementById('modalContent');mc.style.maxWidth='400px';
-  mc.innerHTML=`
-    <div class="modal-title">${t('updateStatus')} (${sel.length} selected)<button class="close-btn" onclick="closeModal()">✕</button></div>
-    <div style="display:flex;flex-direction:column;gap:6px;">
-      ${commonActions.map(a=>`<div class="act-item" onclick="bulkBuyerAction('${a}')">${{acknowledge:t('acknowledge'),approve:t('approve'),dispute:t('dispute'),suspend:t('suspend'),refuse:t('refuse'),sendPayment:t('sendPayment')}[a]}</div>`).join('')}
-    </div>
-    <div style="margin-top:12px;font-size:11px;color:var(--muted);">Actions will only apply to invoices where the action is valid for their current status. Others will be skipped.</div>`;
-  document.getElementById('modalOverlay').classList.add('show');
-}
-
-function bulkBuyerAction(action){
-  const sel=getPurchaseInvoices().filter(i=>i.selected);
-  let applied=0,skipped=0;
-  sel.forEach(inv=>{
-    const actions=BUYER_ACTIONS[inv.status]||[];
-    if(!actions.find(a=>a.id===action)){skipped++;return;}
-    if(action==='acknowledge'){inv.status='ACKNOWLEDGED';inv.timeline.push({event:'Buyer acknowledged',status:'ACKNOWLEDGED',actor:'you@software-inc.fr',time:'Now'});}
-    else if(action==='approve'){inv.status='APPROVED';inv.timeline.push({event:'Buyer approved',status:'APPROVED',actor:'you@software-inc.fr',time:'Now'});}
-    else if(action==='sendPayment'){inv.status='PAYMENT_SENT';inv.timeline.push({event:'Buyer sent payment',status:'PAYMENT_SENT',actor:'you@software-inc.fr',time:'Now'});}
-    applied++;inv.selected=false;
-  });
-  closeModal();
-  showToast(`Bulk ${action}: ${applied} invoice(s) updated. ${skipped>0?skipped+' skipped (action not valid for their status).':''}`,applied>0?'success':'error');
-  renderPurchaseDashboard();
-}
+// openBulkAction and bulkBuyerAction replaced by Bulk Actions dropdown (renderBuyerBulkItems + executeBulkBuyer)
 
 // ═══════════════════════════════════════
 // AUDIT TRAIL
