@@ -1418,7 +1418,7 @@ function renderResolveStep2(){
     ${whatHappensHtml}
     <div class="modal-buttons">
       <button class="btn" onclick="resolveState.step=1;renderResolveStep1(invoices.find(i=>i.id===resolveState.id));">← Back</button>
-      <button class="btn btn-primary" onclick="markResolveAcknowledged()">Got it, I'll create in my ERP</button>
+      <button class="btn btn-primary" onclick="markResolveAcknowledged()">Import</button>
     </div>`;
 }
 
@@ -1428,12 +1428,7 @@ function markResolveAcknowledged(){
   const isCorrective = resolveState.path!=='creditnote';
   closeModal();
   resolveState={};
-  showToast(
-    isCorrective?
-    'Create a Corrective Invoice (384) referencing #'+inv.id+' in your ERP and submit it through ClearTax. We will handle the rest.':
-    'Create a Credit Note (381) and a New Invoice (380) referencing #'+inv.id+' in your ERP. Submit both through ClearTax.',
-    'info'
-  );
+  showToast('Redirecting to import screen...','info');
 }
 
 // Simulate ERP-submitted corrective arriving via API (for demo purposes)
