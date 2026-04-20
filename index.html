@@ -948,7 +948,7 @@ function openDetail(id){
   let bannerHtml='';
   if(inv.status==='FAILED') bannerHtml=`<div class="err-panel"><div class="err-header">⚠ Validation Errors — Fix these to submit</div>${inv.errors.map(e=>`<div class="err-item"><span class="err-field">${e.field}</span><span class="err-msg">${e.msg}</span><span class="err-rule">Rule: ${e.rule}</span></div>`).join('')}</div>`;
   if(inv.status==='REJECTED') bannerHtml=`<div class="banner banner-error"><strong>Your invoice has been rejected by the system.</strong> Reason: ${inv.rejectReason?.label||'Unknown'}</div>`;
-  if(inv.status==='DISPUTED') bannerHtml=`<div class="banner banner-info"><strong>Buyer has disputed this invoice.</strong> Reason: ${inv.disputeReason?.label} — "${inv.disputeReason?.comment}"</div>`;
+  if(inv.status==='DISPUTED') bannerHtml=`<div class="banner banner-info"><strong>Buyer has disputed this invoice.</strong> Reason: ${inv.disputeReason?.code} — ${inv.disputeReason?.label}<br>"${inv.disputeReason?.comment}"<div style="margin-top:8px;font-size:11px;color:var(--blue-dark);">To resolve: create a corrective invoice or credit note in your ERP referencing this invoice, then submit through ClearTax.</div></div>`;
   if(inv.status==='REFUSED') bannerHtml=`<div class="banner banner-error"><strong>Buyer has refused this invoice. This is permanent.</strong> Reason: ${inv.refuseReason?.label} — "${inv.refuseReason?.comment}"</div>`;
   if(inv.status==='SUSPENDED') bannerHtml=`<div class="banner banner-warn"><strong>Invoice is suspended.</strong> Buyer needs additional documents.</div>`;
   if(inv.isAlreadyPaid) bannerHtml+=`<div class="banner banner-info"><strong>Already-paid invoice (UC 2).</strong> This transaction was paid before the invoice was issued. You can confirm payment (212) immediately — no buyer processing required.</div>`;
@@ -959,8 +959,8 @@ function openDetail(id){
   if(inv.status==='PENDING') actionBtns=`<button class="btn" style="margin-right:8px;" onclick="toggleEditMode('${inv.id}')">✏ Edit</button><button class="btn btn-primary" onclick="validateInvoice('${inv.id}')">Submit</button>`;
   if(inv.status==='FAILED') actionBtns=`<button class="btn" style="margin-right:8px;" onclick="deleteInvoice('${inv.id}')">Delete</button><button class="btn btn-primary" onclick="validateInvoice('${inv.id}')">Resubmit</button>`;
   if(actions.find(a=>a.id==='confirmPayment')) actionBtns+=`<button class="btn btn-primary" onclick="openPaymentModal('${inv.id}')">Confirm Payment</button>`;
-  if(actions.find(a=>a.id==='cancelReplace')) actionBtns+=`<button class="btn btn-primary" onclick="openCancelModal('${inv.id}')">Resolve Dispute</button>`;
-  if(actions.find(a=>a.id==='createCorrective')) actionBtns+=`<button class="btn btn-primary" onclick="openCancelModal('${inv.id}')">Issue Replacement</button>`;
+  if(actions.find(a=>a.id==='cancelReplace')) actionBtns+=`<button class="btn btn-primary" onclick="openCancelModal('${inv.id}')">Resolve Dispute</button><button class="btn" style="margin-left:6px;font-size:11px;color:var(--muted);" onclick="simulateCorrectiveArrival('${inv.id}')" title="Demo: simulate a corrective invoice arriving via API from ERP">Simulate API arrival</button>`;
+  if(actions.find(a=>a.id==='createCorrective')) actionBtns+=`<button class="btn btn-primary" onclick="openCancelModal('${inv.id}')">Resolve Dispute</button>`;
 
   const dp=document.getElementById('detailPanel');
   dp.innerHTML=`
@@ -1272,230 +1272,187 @@ let resolveState = {};
 function openCancelModal(id){
   const inv=invoices.find(i=>i.id===id);
   if(!inv)return;
-  closeDetail();
-  resolveState = {id, path:null};
+  resolveState = {id, path:null, step:1};
   renderResolveStep1(inv);
 }
 
-// Step 1: Choose path (modal)
+// Step 1: Choose resolution path (modal)
 function renderResolveStep1(inv){
   const mc=document.getElementById('modalContent');
-  mc.style.maxWidth='560px';
+  mc.style.maxWidth='600px';
   mc.innerHTML=`
     <div class="modal-title">Resolve Dispute<button class="close-btn" onclick="closeModal()">✕</button></div>
-    <div style="background:#F8F9FB;padding:12px;border-radius:6px;margin-bottom:12px;font-size:12px;">
-      <div style="display:flex;justify-content:space-between;"><strong>Invoice #${inv.id}</strong><span class="badge b-disputed">⚡ Disputed</span></div>
-      <div style="margin-top:6px;color:var(--text);">Buyer: ${inv.buyerName} · Amount: ${inv.amount} €</div>
-      <div style="margin-top:6px;padding:6px 8px;background:var(--yellow-light);border-radius:4px;font-size:11px;">
+    <div style="background:#F8F9FB;padding:12px;border-radius:6px;margin-bottom:16px;font-size:12px;">
+      <div style="display:flex;justify-content:space-between;"><strong>Invoice #${inv.id}</strong><span class="badge b-disputed">Disputed (207)</span></div>
+      <div style="margin-top:6px;color:var(--text);">Buyer: ${inv.buyerName} | Amount: ${inv.amount} EUR</div>
+      <div style="margin-top:8px;padding:8px 10px;background:var(--yellow-light);border-radius:4px;font-size:11px;border-left:3px solid var(--yellow);">
         <strong>Dispute reason:</strong> ${inv.disputeReason?.code} — ${inv.disputeReason?.label}<br>
         <strong>Comment:</strong> "${inv.disputeReason?.comment}"
       </div>
     </div>
     <div class="modal-section">
-      <div class="modal-label" style="font-size:13px;">How do you want to resolve this?</div>
+      <div class="modal-label" style="font-size:13px;margin-bottom:10px;">How do you want to resolve this?</div>
       <div class="radio-group">
         <div class="radio-opt ${resolveState.path!=='creditnote'?'sel':''}" onclick="resolveState.path='corrective';selectRadio(this)">
           <div class="radio-circle"></div>
-          <div style="flex:1;"><div class="radio-title">Corrective Invoice (type 384)</div><div class="radio-desc">Fix and replace. One document with corrected data. Best for minor errors.</div></div>
+          <div style="flex:1;">
+            <div class="radio-title">Corrective Invoice (type 384)</div>
+            <div class="radio-desc">Cancels and replaces the original. One document with corrected data. Best for minor errors (wrong quantity, price, reference).</div>
+          </div>
         </div>
         <div class="radio-opt ${resolveState.path==='creditnote'?'sel':''}" onclick="resolveState.path='creditnote';selectRadio(this)">
           <div class="radio-circle"></div>
-          <div style="flex:1;"><div class="radio-title">Credit Note (381) + New Invoice (380)</div><div class="radio-desc">Full reversal and re-issue. Two documents. Best for major errors.</div></div>
+          <div style="flex:1;">
+            <div class="radio-title">Credit Note (381) + New Invoice (380)</div>
+            <div class="radio-desc">Full reversal and re-issue. Two separate documents. Best for major errors (wrong buyer, wrong transaction).</div>
+          </div>
         </div>
       </div>
     </div>
-    <div class="modal-buttons"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="openResolvePanel()">Continue →</button></div>`;
+    <div class="modal-buttons"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="renderResolveStep2()">Continue</button></div>`;
   document.getElementById('modalOverlay').classList.add('show');
 }
 
-// Step 2: Open detail panel in resolve/edit mode
-function openResolvePanel(){
+// Step 2: Guidance + Reference Data (modal)
+function renderResolveStep2(){
   if(!resolveState.path) resolveState.path='corrective';
-  closeModal();
-  const inv=invoices.find(i=>i.id===resolveState.id);
-  if(!inv)return;
-  const isCorrective = resolveState.path!=='creditnote';
-  const docType = isCorrective ? 'Corrective Invoice (384)' : (resolveState.creditNoteDone ? 'New Invoice (380)' : 'Credit Note (381)');
-  const dp=document.getElementById('detailPanel');
-
-  let creditNoteConfirmed = '';
-  if(!isCorrective && !resolveState.creditNoteDone){
-    // Credit note step — show reversed amounts, read-only
-    creditNoteConfirmed = `
-      <div class="banner banner-info" style="margin:0 28px 16px;">📝 This credit note fully reverses Invoice #${inv.id}. All amounts automatically negated. Review and confirm, then proceed to create the replacement invoice.</div>`;
-  } else if(!isCorrective && resolveState.creditNoteDone){
-    creditNoteConfirmed = `
-      <div class="banner banner-success" style="margin:0 28px 16px;">✓ Credit Note confirmed. Now edit the replacement invoice with corrected data below.</div>`;
-  }
-
-  const isNegated = !isCorrective && !resolveState.creditNoteDone;
-
-  dp.innerHTML=`
-    <div class="dp-header">
-      <div class="dp-title">Creating: ${docType} <span class="badge b-submitted" style="font-size:12px;">New Document</span></div>
-      <div class="dp-actions">
-        <button class="btn" onclick="closeDetail();resolveState={};renderSalesDashboard();">Cancel</button>
-        ${isNegated?
-          `<button class="btn btn-primary" onclick="resolveState.creditNoteDone=true;openResolvePanel();">Confirm Credit Note → Next</button>` :
-          `<button class="btn btn-primary" onclick="showReviewModal()">Review & Submit</button>`
-        }
-      </div>
-    </div>
-    <div style="padding:0 28px;">
-      <div class="edit-bar">
-        ${isCorrective?'📝 Editing Corrective Invoice — data copied from Invoice #'+inv.id+'. Edit the highlighted fields.':
-          isNegated?'📝 Credit Note — all amounts reversed from Invoice #'+inv.id+'. Review below.' :
-          '📝 Editing New Invoice — data copied from Invoice #'+inv.id+'. Fix the disputed fields.'}
-        <span style="font-size:11px;color:var(--muted);">Ref: Invoice #${inv.id} (BT-25)</span>
-      </div>
-    </div>
-    ${creditNoteConfirmed}
-    <div style="padding:0 28px;">
-      <div class="section-title">Document Summary</div>
-      <div class="form-grid">
-        <div class="form-group"><span class="form-label">Document type</span><input class="form-input" value="${docType}" disabled></div>
-        <div class="form-group"><span class="form-label">Document number<span class="req">*</span></span><input class="form-input" value="Auto-generated on submit" disabled style="font-style:italic;color:var(--muted);"></div>
-        <div class="form-group"><span class="form-label">Document date<span class="req">*</span></span><input class="form-input${isNegated?'':' edit-field'}" value="26/03/2026" ${isNegated?'disabled':''}></div>
-        <div class="form-group"><span class="form-label">References (BT-25)</span><input class="form-input" value="#${inv.id}" disabled></div>
-        <div class="form-group"><span class="form-label">Currency</span><input class="form-input" value="EUR" disabled></div>
-      </div>
-
-      <div class="section-title">Supplier Details</div>
-      <div class="form-grid">
-        <div class="form-group"><span class="form-label">Supplier VAT<span class="req">*</span></span><input class="form-input" value="FR12345678901" disabled></div>
-        <div class="form-group"><span class="form-label">Supplier name<span class="req">*</span></span><input class="form-input" value="Software Inc." disabled></div>
-        <div class="form-group"><span class="form-label">SIREN<span class="req">*</span></span><input class="form-input" value="123456789" disabled></div>
-        <div class="form-group"><span class="form-label">City</span><input class="form-input" value="Paris" disabled></div>
-      </div>
-
-      <div class="section-title">Buyer Details</div>
-      <div class="form-grid">
-        <div class="form-group"><span class="form-label">Buyer VAT<span class="req">*</span></span><input class="form-input" value="${inv.buyerVat}" disabled></div>
-        <div class="form-group"><span class="form-label">Buyer name<span class="req">*</span></span><input class="form-input" value="${inv.buyerName}" disabled></div>
-      </div>
-
-      <div class="section-title">Line Items ${isNegated?'(reversed)':''}</div>
-      <div style="border:1px solid var(--gray-border);border-radius:var(--radius);overflow:hidden;margin-bottom:16px;">
-        <table style="width:100%;">
-          <thead><tr>
-            <th style="padding:8px 12px;font-size:11px;text-align:left;">#</th>
-            <th style="padding:8px 12px;font-size:11px;text-align:left;">Description</th>
-            <th style="padding:8px 12px;font-size:11px;text-align:left;">Qty</th>
-            <th style="padding:8px 12px;font-size:11px;text-align:left;">Unit Price (€)</th>
-            <th style="padding:8px 12px;font-size:11px;text-align:left;">VAT Rate</th>
-            <th style="padding:8px 12px;font-size:11px;text-align:right;">Amount (€)</th>
-          </tr></thead>
-          <tbody>
-            <tr>
-              <td style="padding:8px 12px;">1</td>
-              <td style="padding:8px 12px;">${isNegated?'':'<input class="form-input" value="'}Cloud Infrastructure Services — Q3 2024${isNegated?'':'" style="width:100%;">'}</td>
-              <td style="padding:8px 12px;">${isNegated?'1':'<input class="form-input" value="1" style="width:50px;">'}</td>
-              <td style="padding:8px 12px;">${isNegated?'8.500,00':'<input class="form-input" value="8.500,00" style="width:90px;">'}</td>
-              <td style="padding:8px 12px;">20%</td>
-              <td style="padding:8px 12px;text-align:right;${isNegated?'color:var(--red);':''}">${isNegated?'-10.200,00':'10.200,00'}</td>
-            </tr>
-            <tr style="${isNegated?'':'background:var(--yellow-light);'}">
-              <td style="padding:8px 12px;">2</td>
-              <td style="padding:8px 12px;">${isNegated?'':'<input class="form-input" value="'}Technical Support Package${isNegated?'':'" style="width:100%;">'}</td>
-              <td style="padding:8px 12px;">${isNegated?'5':'<input class="edit-field" value="3" style="width:50px;border-color:var(--yellow);">'}</td>
-              <td style="padding:8px 12px;">${isNegated?'750,00':'<input class="form-input" value="750,00" style="width:90px;">'}</td>
-              <td style="padding:8px 12px;">5,5%</td>
-              <td style="padding:8px 12px;text-align:right;${isNegated?'color:var(--red);':''}">${isNegated?'-3.750,00':'2.250,00'}</td>
-            </tr>
-          </tbody>
-        </table>
-        ${!isNegated?'<div style="padding:8px 12px;font-size:10px;color:#92400E;background:var(--yellow-light);border-top:1px solid #FCD34D;">⚠ Line #2 highlighted — disputed field (QTE_ERR: Wrong quantity). Original value: 5 units.</div>':''}
-      </div>
-
-      <div style="border:1px solid var(--gray-border);border-radius:var(--radius);padding:14px;margin-bottom:24px;">
-        <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:6px;"><span>Total excl. VAT</span><span ${isNegated?'style="color:var(--red);"':''}>  ${isNegated?'-12.450,00':'10.750,00'} €</span></div>
-        <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:6px;"><span>VAT</span><span ${isNegated?'style="color:var(--red);"':''}>  ${isNegated?'-1.700,00':'1.823,75'} €</span></div>
-        <div style="display:flex;justify-content:space-between;font-size:15px;font-weight:700;border-top:1px solid var(--gray-border);padding-top:10px;"><span>Total incl. VAT</span><span ${isNegated?'style="color:var(--red);"':''}>  ${isNegated?'-14.150,00':'12.573,75'} €</span></div>
-      </div>
-    </div>`;
-
-  dp.classList.add('show');
-  document.getElementById('overlay').classList.add('show');
-}
-
-// Step 3: Review diff (modal over detail panel)
-function showReviewModal(){
   const inv=invoices.find(i=>i.id===resolveState.id);
   if(!inv)return;
   const isCorrective = resolveState.path!=='creditnote';
   const mc=document.getElementById('modalContent');
-  mc.style.maxWidth='560px';
-  mc.innerHTML=`
-    <div class="modal-title">Review & Submit<button class="close-btn" onclick="closeModal()">✕</button></div>
-    <div style="font-weight:600;margin-bottom:10px;">What will happen:</div>
+  mc.style.maxWidth='620px';
+
+  const refDataHtml = `
     <div style="border:1px solid var(--gray-border);border-radius:var(--radius);overflow:hidden;margin-bottom:16px;">
-      <div style="padding:12px;background:var(--red-light);border-bottom:1px solid var(--red-bg);">
-        <div style="display:flex;align-items:center;gap:8px;"><span class="badge b-cancelled">⊘ Cancelled</span><strong>Invoice #${inv.id}</strong> (Original)</div>
-        <div style="font-size:12px;color:var(--text);margin-top:4px;">Marked as Annulée (220). Sent to buyer's PA. NOT sent to PPF.</div>
-      </div>
-      ${isCorrective?`
-      <div style="padding:12px;background:var(--green-light);">
-        <div style="display:flex;align-items:center;gap:8px;"><span class="badge b-submitted">◄ New</span><strong>Corrective Invoice (384)</strong></div>
-        <div style="font-size:12px;color:var(--text);margin-top:4px;">References #${inv.id}. Filed with PPF (200). Delivered to buyer's PA.</div>
-        <div style="margin-top:8px;padding:8px;background:var(--white);border-radius:4px;font-size:12px;">
-          <div style="font-weight:600;margin-bottom:4px;">Changes:</div>
-          <div><span style="color:var(--red);text-decoration:line-through;">Qty: 5</span> → <span style="color:var(--green);font-weight:600;">Qty: 3</span></div>
-          <div><span style="color:var(--red);text-decoration:line-through;">Total: 14.150,00 €</span> → <span style="color:var(--green);font-weight:600;">Total: 12.573,75 €</span></div>
+      <div style="background:#F8F9FB;padding:10px 14px;font-weight:600;font-size:12px;border-bottom:1px solid var(--gray-border);">Reference Data — Copy to Your ERP</div>
+      <div style="padding:14px;">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:12px;">
+          <div><span style="color:var(--muted);display:block;font-size:10px;margin-bottom:2px;">Original Invoice Number (BT-25)</span><strong style="font-size:13px;user-select:all;">${inv.id}</strong></div>
+          <div><span style="color:var(--muted);display:block;font-size:10px;margin-bottom:2px;">Original Invoice Date (BT-26)</span><strong style="user-select:all;">${inv.date}</strong></div>
+          <div><span style="color:var(--muted);display:block;font-size:10px;margin-bottom:2px;">Seller SIREN</span><strong style="user-select:all;">123456789</strong></div>
+          <div><span style="color:var(--muted);display:block;font-size:10px;margin-bottom:2px;">Seller VAT</span><strong style="user-select:all;">FR12345678901</strong></div>
+          <div><span style="color:var(--muted);display:block;font-size:10px;margin-bottom:2px;">Buyer SIREN</span><strong style="user-select:all;">${inv.buyerVat?.replace('FR','').substring(0,9)||'353168634'}</strong></div>
+          <div><span style="color:var(--muted);display:block;font-size:10px;margin-bottom:2px;">Buyer Name</span><strong style="user-select:all;">${inv.buyerName}</strong></div>
+          <div><span style="color:var(--muted);display:block;font-size:10px;margin-bottom:2px;">Original Amount (incl. VAT)</span><strong style="user-select:all;">${inv.amount} EUR</strong></div>
+          <div><span style="color:var(--muted);display:block;font-size:10px;margin-bottom:2px;">Dispute Reason</span><strong style="user-select:all;">${inv.disputeReason?.code||'—'}</strong></div>
         </div>
-      </div>`:`
-      <div style="padding:12px;border-bottom:1px solid var(--gray-border);">
-        <div style="display:flex;align-items:center;gap:8px;"><span class="badge b-submitted">◄ New</span><strong>Credit Note (381)</strong></div>
-        <div style="font-size:12px;color:var(--text);margin-top:4px;">Reverses #${inv.id}. Amount: <strong style="color:var(--red);">-14.150,00 €</strong>. Filed with PPF.</div>
       </div>
-      <div style="padding:12px;background:var(--green-light);">
-        <div style="display:flex;align-items:center;gap:8px;"><span class="badge b-submitted">◄ New</span><strong>New Invoice (380)</strong></div>
-        <div style="font-size:12px;color:var(--text);margin-top:4px;">Corrected data. Amount: <strong style="color:var(--green);">12.573,75 €</strong>. Filed with PPF.</div>
-        <div style="margin-top:8px;padding:8px;background:var(--white);border-radius:4px;font-size:12px;">
-          <div style="font-weight:600;margin-bottom:4px;">Changes:</div>
-          <div><span style="color:var(--red);text-decoration:line-through;">Qty: 5</span> → <span style="color:var(--green);font-weight:600;">Qty: 3</span></div>
-        </div>
-      </div>`}
-    </div>
-    <div class="banner banner-warn">⚠ This cannot be undone. Original invoice permanently cancelled.</div>
-    <div class="modal-buttons">
-      <button class="btn" onclick="closeModal()">← Back to Edit</button>
-      <button class="btn btn-primary" onclick="submitResolve()">Submit ${isCorrective?'Corrective':'Credit Note + New Invoice'}</button>
     </div>`;
-  document.getElementById('modalOverlay').classList.add('show');
+
+  const correctiveSteps = `
+    <div style="margin-bottom:16px;">
+      <div style="font-weight:600;font-size:13px;margin-bottom:10px;">Steps to resolve:</div>
+      <div style="display:flex;flex-direction:column;gap:8px;">
+        <div style="display:flex;gap:10px;align-items:flex-start;">
+          <div style="min-width:22px;height:22px;border-radius:50%;background:var(--blue);color:white;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;">1</div>
+          <div style="font-size:12px;"><strong>Create a Corrective Invoice (384) in your ERP</strong><br><span style="color:var(--text);">Reference the original invoice #${inv.id} in BG-3 (BT-25 and BT-26). Include the corrected data.</span></div>
+        </div>
+        <div style="display:flex;gap:10px;align-items:flex-start;">
+          <div style="min-width:22px;height:22px;border-radius:50%;background:var(--blue);color:white;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;">2</div>
+          <div style="font-size:12px;"><strong>Submit the corrective invoice through ClearTax</strong><br><span style="color:var(--text);">Push from your ERP via API, or import via the platform. ClearTax will validate, file with PPF, and deliver to the buyer's PA.</span></div>
+        </div>
+        <div style="display:flex;gap:10px;align-items:flex-start;">
+          <div style="min-width:22px;height:22px;border-radius:50%;background:var(--blue);color:white;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;">3</div>
+          <div style="font-size:12px;"><strong>ClearTax auto-links and handles the rest</strong><br><span style="color:var(--text);">Once the corrective invoice is submitted, ClearTax detects the BG-3 reference, links it to the disputed invoice, sets the original to Cancelled (220), and sends CDV 220 to the buyer's PA.</span></div>
+        </div>
+      </div>
+    </div>`;
+
+  const creditNoteSteps = `
+    <div style="margin-bottom:16px;">
+      <div style="font-weight:600;font-size:13px;margin-bottom:10px;">Steps to resolve:</div>
+      <div style="display:flex;flex-direction:column;gap:8px;">
+        <div style="display:flex;gap:10px;align-items:flex-start;">
+          <div style="min-width:22px;height:22px;border-radius:50%;background:var(--blue);color:white;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;">1</div>
+          <div style="font-size:12px;"><strong>Create a Credit Note (381) in your ERP</strong><br><span style="color:var(--text);">Reference the original invoice #${inv.id} in BG-3 (BT-25 and BT-26). This partially or fully reverses the original.</span></div>
+        </div>
+        <div style="display:flex;gap:10px;align-items:flex-start;">
+          <div style="min-width:22px;height:22px;border-radius:50%;background:var(--blue);color:white;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;">2</div>
+          <div style="font-size:12px;"><strong>Create a New Invoice (380) in your ERP</strong><br><span style="color:var(--text);">The replacement invoice with corrected data. This is a new document with its own lifecycle.</span></div>
+        </div>
+        <div style="display:flex;gap:10px;align-items:flex-start;">
+          <div style="min-width:22px;height:22px;border-radius:50%;background:var(--blue);color:white;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;">3</div>
+          <div style="font-size:12px;"><strong>Submit both through ClearTax</strong><br><span style="color:var(--text);">Push from your ERP via API, or import via the platform. ClearTax validates, files with PPF, and delivers to the buyer's PA.</span></div>
+        </div>
+        <div style="display:flex;gap:10px;align-items:flex-start;">
+          <div style="min-width:22px;height:22px;border-radius:50%;background:var(--blue);color:white;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;">4</div>
+          <div style="font-size:12px;"><strong>ClearTax auto-links and handles the rest</strong><br><span style="color:var(--text);">ClearTax detects the BG-3 reference on the credit note, links it to the disputed invoice. The buyer approves both the original invoice and the credit note. The original invoice moves from Disputed to Approved — it is NOT cancelled in this path.</span></div>
+        </div>
+      </div>
+    </div>`;
+
+  const whatHappensHtml = `
+    <div style="border:1px solid var(--gray-border);border-radius:var(--radius);overflow:hidden;margin-bottom:16px;">
+      <div style="background:#F8F9FB;padding:10px 14px;font-weight:600;font-size:12px;border-bottom:1px solid var(--gray-border);">What happens to the original invoice?</div>
+      <div style="padding:14px;font-size:12px;">
+        ${isCorrective?`
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+            <span class="badge b-disputed">Disputed (207)</span>
+            <span style="color:var(--muted);">→</span>
+            <span class="badge" style="background:#F3F4F6;color:#6B7280;">Cancelled (220)</span>
+          </div>
+          <div style="color:var(--text);">The original invoice is cancelled once the corrective is submitted. CDV 220 is sent to the buyer's PA (not to PPF). PPF only knows about the replacement corrective invoice.</div>
+        `:`
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+            <span class="badge b-disputed">Disputed (207)</span>
+            <span style="color:var(--muted);">→</span>
+            <span class="badge b-approved">Approved (205)</span>
+            <span style="color:var(--muted);">→</span>
+            <span class="badge" style="background:var(--green-light);color:var(--green);">Collected (212)</span>
+          </div>
+          <div style="color:var(--text);">The original invoice stays alive. The buyer approves both the original and the credit note. The seller collects the net amount (original minus credit). No cancellation.</div>
+        `}
+      </div>
+    </div>`;
+
+  mc.innerHTML=`
+    <div class="modal-title">
+      Resolve Dispute — ${isCorrective?'Corrective Invoice':'Credit Note + New Invoice'}
+      <button class="close-btn" onclick="closeModal()">✕</button>
+    </div>
+    <div style="background:var(--blue-light);padding:10px 14px;border-radius:6px;margin-bottom:16px;font-size:12px;color:var(--blue-dark);border-left:3px solid var(--blue);">
+      Create the ${isCorrective?'corrective invoice':'credit note and new invoice'} in your ERP system, then submit ${isCorrective?'it':'them'} through ClearTax. ClearTax will automatically link ${isCorrective?'it':'them'} to the disputed invoice and handle PPF reporting.
+    </div>
+    ${isCorrective?correctiveSteps:creditNoteSteps}
+    ${refDataHtml}
+    ${whatHappensHtml}
+    <div class="modal-buttons">
+      <button class="btn" onclick="resolveState.step=1;renderResolveStep1(invoices.find(i=>i.id===resolveState.id));">← Back</button>
+      <button class="btn btn-primary" onclick="markResolveAcknowledged()">Got it, I'll create in my ERP</button>
+    </div>`;
 }
 
-function submitResolve(){
+function markResolveAcknowledged(){
   const inv=invoices.find(i=>i.id===resolveState.id);
   if(!inv)return;
   const isCorrective = resolveState.path!=='creditnote';
+  closeModal();
+  resolveState={};
+  showToast(
+    isCorrective?
+    'Create a Corrective Invoice (384) referencing #'+inv.id+' in your ERP and submit it through ClearTax. We will handle the rest.':
+    'Create a Credit Note (381) and a New Invoice (380) referencing #'+inv.id+' in your ERP. Submit both through ClearTax.',
+    'info'
+  );
+}
+
+// Simulate ERP-submitted corrective arriving via API (for demo purposes)
+function simulateCorrectiveArrival(disputedInvId){
+  const inv=invoices.find(i=>i.id===disputedInvId);
+  if(!inv||inv.status!=='DISPUTED')return;
   inv.status='CANCELLED';
-  inv.timeline.push({event:'Seller cancelled — '+(isCorrective?'corrective':'credit note + new invoice')+' issued',status:'CANCELLED',actor:'acmexyz@abcmail.in',time:'Now'});
+  inv.timeline.push({event:'Corrective invoice received via API — original cancelled (220)',status:'CANCELLED',actor:'System (API)',time:'Now'});
   const newId = '100'+(1010+invoices.length);
   invoices.push({
-    id:newId, status:'SUBMITTED', type:isCorrective?'INV':'CRN', date:'26-3-2026',
-    ppfId:'PPF-2026-'+(Math.floor(Math.random()*90000)+10000),
+    id:newId, status:'SUBMITTED', type:'INV', date:new Date().toLocaleDateString('fr-FR'),
+    ppfId:'',
     buyerVat:inv.buyerVat, buyerName:inv.buyerName, amount:'12.573,75',
     vatAmount:'1.823,75', vatRates:[{rate:'20%',amount:'10.200,00'},{rate:'5,5%',amount:'2.373,75'}],
     errors:[], disputeReason:null, refuseReason:null, rejectReason:null, daysInStatus:0,
-    timeline:[{event:'Created as '+(isCorrective?'corrective (384)':'credit note (381)')+' for #'+inv.id,status:'SUBMITTED',actor:'acmexyz@abcmail.in',time:'Now'}],
+    timeline:[{event:'Corrective invoice (384) for #'+inv.id+' — received via API, auto-linked via BG-3 reference',status:'SUBMITTED',actor:'System (API)',time:'Now'}],
     selected:false
   });
-  if(!isCorrective){
-    const newId2 = '100'+(1011+invoices.length);
-    invoices.push({
-      id:newId2, status:'SUBMITTED', type:'INV', date:'26-3-2026',
-      ppfId:'PPF-2026-'+(Math.floor(Math.random()*90000)+10000),
-      buyerVat:inv.buyerVat, buyerName:inv.buyerName, amount:'12.573,75',
-      vatAmount:'1.823,75', vatRates:[{rate:'20%',amount:'10.200,00'},{rate:'5,5%',amount:'2.373,75'}],
-      errors:[], disputeReason:null, refuseReason:null, rejectReason:null, daysInStatus:0,
-      timeline:[{event:'Created as replacement invoice (380) for #'+inv.id,status:'SUBMITTED',actor:'acmexyz@abcmail.in',time:'Now'}],
-      selected:false
-    });
-  }
-  closeModal(); closeDetail(); resolveState={};
-  showToast(isCorrective?
-    'Dispute resolved. Invoice #'+inv.id+' cancelled (220). Corrective Invoice #'+newId+' filed with PPF (200) and delivered to buyer\'s PA.' :
-    'Dispute resolved. Invoice #'+inv.id+' cancelled (220). Credit Note and New Invoice filed with PPF (200) and delivered to buyer\'s PA.','success');
+  showToast('Corrective Invoice #'+newId+' received via API. Auto-linked to disputed Invoice #'+inv.id+'. Original cancelled (220). Corrective filed with PPF (200) and delivered to buyer.','success');
   renderSalesDashboard();
 }
 
